@@ -23,22 +23,29 @@ def setup_google_sheets():
     return gspread.authorize(creds)
 
 def clean_value(text, marker):
+    """
+    Улучшенный поиск чисел. Ищет маркер (например ALTITUDE), 
+    берет всю строку, вытаскивает из нее первое найденное число 
+    (до пробела или букв) и меняет точку на запятую.
+    """
     for line in text.split('\n'):
         if marker.upper() in line.upper():
-            val = line.split(':')[-1].strip()
-            val = re.sub(r'[^\d\.\-]', '', val)
-            return val.replace('.', ',')
+            # Убираем сам маркер и двоеточие, оставляем только правую часть
+            val_str = line.upper().replace(marker.upper(), '').replace(':', '').strip()
+            # Ищем первое число (цифры и точка)
+            match = re.search(r'[\d\.]+', val_str)
+            if match:
+                return match.group(0).replace('.', ',')
     return ""
 
 def upload_image_to_host(filepath):
-    """Загружает скриншот на бесплатный сервер и возвращает прямую ссылку"""
     try:
         with open(filepath, 'rb') as f:
             response = requests.post('https://catbox.moe/user/api.php', 
                                      data={'reqtype': 'fileupload'}, 
                                      files={'fileToUpload': f})
         if response.status_code == 200:
-            return response.text # Готовая ссылка на картинку
+            return response.text
     except Exception as e:
         print(f"Ошибка загрузки картинки: {e}")
     return "Не удалось сохранить скриншот"
@@ -86,7 +93,6 @@ def run_bot():
                 driver.get(url)
                 time.sleep(15) 
                 
-                # УМНЫЙ ПОИСК: Ищем таблицу по содержанию текста, а не по ID
                 try:
                     satinfo_element = driver.find_element(By.XPATH, "//*[contains(text(), 'NORAD ID')]/ancestor::table[1]")
                 except:
@@ -102,14 +108,11 @@ def run_bot():
                 
                 summary_heights[sheet_name] = altitude
                 
-                # Загружаем скриншот и получаем ссылку
                 screenshot_link = upload_image_to_host(screenshot_name)
                 
-                # Удаляем картинку с сервера GitHub, чтобы не мусорить
                 if os.path.exists(screenshot_name):
                     os.remove(screenshot_name)
 
-                # Запись в Гугл Таблицу
                 sheet = workbook.worksheet(sheet_name)
                 row_to_append = [current_date, current_time, altitude, velocity, screenshot_link]
                 sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
@@ -120,7 +123,6 @@ def run_bot():
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
                 continue
         
-        # Обновление сводного листа
         try:
             summary_sheet = workbook.worksheet("Данные по высоте орбит всех КА")
             summary_row = [current_date, current_time]
