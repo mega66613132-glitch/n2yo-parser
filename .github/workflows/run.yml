@@ -2,7 +2,8 @@ name: Daily N2YO Parser
 
 on:
   schedule:
-    - cron: '55 15 * * *'
+    # Запуск каждый день в 19:01 по МСК (16:01 по UTC)
+    - cron: '1 16 * * *'
   workflow_dispatch: 
 
 jobs:
@@ -25,18 +26,10 @@ jobs:
 
     - name: Install Python dependencies
       run: |
-        pip install pyvirtualdisplay undetected-chromedriver selenium gspread google-api-python-client google-auth
+        pip install pyvirtualdisplay undetected-chromedriver selenium gspread google-api-python-client google-auth requests
 
     - name: Create credentials.json
       run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
 
     - name: Run Python script
       run: python bot.py
-      
-    # НОВЫЙ ШАГ: Собираем скриншоты прямо на GitHub
-    - name: Upload screenshots to GitHub
-      uses: actions/upload-artifact@v4
-      if: always() # Этот параметр заставит GitHub собрать скрины даже при ошибках в коде
-      with:
-        name: cloudflare-screenshots
-        path: "*.png"
