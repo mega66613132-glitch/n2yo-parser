@@ -1,0 +1,30 @@
+name: Daily N2YO Parser
+
+on:
+  schedule:
+    # Запуск каждый день в 09:00 по UTC (12:00 по московскому времени)
+    - cron: '0 16 * * *'
+  workflow_dispatch: 
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install selenium gspread google-api-python-client google-auth
+
+    - name: Create credentials.json
+      run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+
+    - name: Run Python script
+      run: python bot.py
