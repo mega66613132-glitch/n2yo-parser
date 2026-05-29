@@ -29,14 +29,12 @@ def get_text(driver, el_id):
         return ""
 
 def upload_to_imgur(filepath):
-    """Надежная загрузка скриншотов через API Imgur"""
     try:
-        # Публичный Client-ID для анонимной загрузки картинок
         headers = {'Authorization': 'Client-ID 546c25a59c58ad7'}
         with open(filepath, 'rb') as f:
             r = requests.post('https://api.imgur.com/3/image', headers=headers, files={'image': f}, timeout=30)
         if r.status_code == 200:
-            return r.json()['data']['link'] # Прямая ссылка на картинку
+            return r.json()['data']['link']
     except Exception as e:
         print(f"Ошибка Imgur: {e}")
     return "Скриншот не загружен"
@@ -58,7 +56,7 @@ def run_bot():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled") 
-    options.add_argument("--disable-gpu") # Предотвращает зависания браузера на сервере
+    options.add_argument("--disable-gpu")
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
 
@@ -66,7 +64,7 @@ def run_bot():
     print(f"Запуск браузера (версия Chrome: {v_main})...")
     
     driver = uc.Chrome(options=options, version_main=v_main)
-    driver.set_page_load_timeout(60) # Если страница висит больше минуты - идем дальше
+    driver.set_page_load_timeout(60)
     
     try:
         gc = setup_google_sheets()
@@ -85,14 +83,17 @@ def run_bot():
                 driver.get(url)
                 time.sleep(12) 
                 
-                # Точки НЕ заменяем, чтобы таблица не ломалась!
-                lat = get_text(driver, "satlat")
-                lon = get_text(driver, "satlng")
-                alt = get_text(driver, "sataltkm")
-                speed = get_text(driver, "satspdkm")
+                # Принудительно меняем точки на запятые для правильной работы графиков!
+                lat = get_text(driver, "satlat").replace('.', ',')
+                lon = get_text(driver, "satlng").replace('.', ',')
+                alt = get_text(driver, "sataltkm").replace('.', ',')
+                speed = get_text(driver, "satspdkm").replace('.', ',')
                 
-                az = f"{get_text(driver, 'sataz')} {get_text(driver, 'satazcmp')}".strip()
-                el = get_text(driver, "satel")
+                az_val = get_text(driver, 'sataz').replace('.', ',')
+                az_cmp = get_text(driver, 'satazcmp')
+                az = f"{az_val} {az_cmp}".strip()
+                
+                el = get_text(driver, "satel").replace('.', ',')
                 
                 ra = get_text(driver, "satra").replace('h', 'ч').replace('m', 'м').replace('s', 'с')
                 dec = get_text(driver, "satdec")
@@ -115,28 +116,33 @@ def run_bot():
                 if os.path.exists(screenshot_name):
                     os.remove(screenshot_name)
 
-                # Строгий массив данных (ровно под ваши 14 колонок)
                 sheet = workbook.worksheet(sheet_name)
+                
+                # Массив ровно на 14 колонок (A-N)
                 row_to_append = [
-                    "",             # Колонке A (пустая)
-                    current_time,   # Колонка B
-                    current_date,   # Колонка C
-                    lat,            # Колонка D
-                    lon,            # Колонка E
-                    alt,            # Колонка F
-                    speed,          # Колонка G
-                    az,             # Колонка H
-                    el,             # Колонка I
-                    ra,             # Колонка J
-                    dec,            # Колонка K
-                    lst,            # Колонка L
-                    period,         # Колонка M
-                    screenshot_link # Колонка N (Скриншот)
+                    "",             # Колонке A (пустая, как у вас)
+                    current_time,   # Колонка B: Время
+                    current_date,   # Колонка C: Дата
+                    lat,            # Колонка D: Latitude
+                    lon,            # Колонка E: Longitude
+                    alt,            # Колонка F: Altitude (с запятой!)
+                    speed,          # Колонка G: Speed (с запятой!)
+                    az,             # Колонка H: Azimuth
+                    el,             # Колонка I: Elevation (с запятой!)
+                    ra,             # Колонка J: Right ascension
+                    dec,            # Колонка K: Declination
+                    lst,            # Колонка L: Local Sidereal Time
+                    period,         # Колонка M: SATELLITE PERIOD
+                    screenshot_link # Колонка N: Скриншот
                 ]
                 
-                # table_range='A1' заставляет Google Sheets жестко считать с колонки A
-                sheet.append_row(row_to_append, value_input_option='USER_ENTERED', table_range='A1')
-                print(f"Успешно сохранено! Высота={alt}, Скриншот: {screenshot_link}")
+                # Ищем последнюю строку ПО КОЛОНКЕ B (Время). Это сохранит старые даты!
+                col_b = sheet.col_values(2)
+                next_row = len(col_b) + 1 
+                
+                # Записываем строго от A до N в новую строку под историей
+                sheet.update(values=[row_to_append], range_name=f"A{next_row}:N{next_row}", value_input_option='USER_ENTERED')
+                print(f"Успешно сохранено! Строка {next_row}, Высота={alt}")
                 
             except Exception as sat_error:
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
@@ -149,9 +155,15 @@ def run_bot():
             for i in range(16):
                 name = f"РАССВЕТ 3-{i+1}"
                 summary_row.append(summary_heights.get(name, ""))
+                
+            # Ищем пустую строку на сводном листе по колонке С (Дата)
+            col_c = summary_sheet.col_values(3)
+            next_sum_row = len(col_c) + 1
             
-            summary_sheet.append_row(summary_row, value_input_option='USER_ENTERED', table_range='A1')
+            # Записываем от A до S
+            summary_sheet.update(values=[summary_row], range_name=f"A{next_sum_row}:S{next_sum_row}", value_input_option='USER_ENTERED')
             print("Сводный лист успешно обновлен.")
+            
         except Exception as summary_error:
             print(f"Не удалось обновить сводный лист: {summary_error}")
 
