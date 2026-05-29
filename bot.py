@@ -23,24 +23,22 @@ def setup_google_sheets():
     return gspread.authorize(creds)
 
 def get_text(driver, el_id):
-    """Идеальное извлечение данных по их уникальным ID на сайте"""
     try:
         return driver.find_element(By.ID, el_id).text.strip()
     except:
         return ""
 
-def upload_image_to_host(filepath):
+def upload_to_imgur(filepath):
+    """Надежная загрузка скриншотов через API Imgur"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        # Публичный Client-ID для анонимной загрузки картинок
+        headers = {'Authorization': 'Client-ID 546c25a59c58ad7'}
         with open(filepath, 'rb') as f:
-            r = requests.post('https://catbox.moe/user/api.php', 
-                              data={'reqtype': 'fileupload'}, 
-                              files={'fileToUpload': f},
-                              headers=headers, timeout=15)
-        if r.status_code == 200 and 'http' in r.text:
-            return r.text.strip()
+            r = requests.post('https://api.imgur.com/3/image', headers=headers, files={'image': f}, timeout=30)
+        if r.status_code == 200:
+            return r.json()['data']['link'] # Прямая ссылка на картинку
     except Exception as e:
-        pass
+        print(f"Ошибка Imgur: {e}")
     return "Скриншот не загружен"
 
 def get_chrome_version():
@@ -60,12 +58,15 @@ def run_bot():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled") 
+    options.add_argument("--disable-gpu") # Предотвращает зависания браузера на сервере
+    options.add_argument("--disable-software-rasterizer")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
 
     v_main = get_chrome_version()
     print(f"Запуск браузера (версия Chrome: {v_main})...")
     
     driver = uc.Chrome(options=options, version_main=v_main)
+    driver.set_page_load_timeout(60) # Если страница висит больше минуты - идем дальше
     
     try:
         gc = setup_google_sheets()
@@ -82,22 +83,17 @@ def run_bot():
             
             try:
                 driver.get(url)
-                time.sleep(15) 
+                time.sleep(12) 
                 
-                # 1. Извлекаем данные точно по ID из вашего HTML кода!
-                lat = get_text(driver, "satlat").replace('.', ',')
-                lon = get_text(driver, "satlng").replace('.', ',')
-                alt = get_text(driver, "sataltkm").replace('.', ',')
-                speed = get_text(driver, "satspdkm").replace('.', ',')
+                # Точки НЕ заменяем, чтобы таблица не ломалась!
+                lat = get_text(driver, "satlat")
+                lon = get_text(driver, "satlng")
+                alt = get_text(driver, "sataltkm")
+                speed = get_text(driver, "satspdkm")
                 
-                # Собираем Азимут (цифры + направление)
-                az_val = get_text(driver, "sataz").replace('.', ',')
-                az_cmp = get_text(driver, "satazcmp")
-                az = f"{az_val} {az_cmp}".strip()
+                az = f"{get_text(driver, 'sataz')} {get_text(driver, 'satazcmp')}".strip()
+                el = get_text(driver, "satel")
                 
-                el = get_text(driver, "satel").replace('.', ',')
-                
-                # Заменяем английские буквы на русские (h -> ч, m -> м, s -> с)
                 ra = get_text(driver, "satra").replace('h', 'ч').replace('m', 'м').replace('s', 'с')
                 dec = get_text(driver, "satdec")
                 lst = get_text(driver, "lmst").replace('h', 'ч').replace('m', 'м').replace('s', 'с')
@@ -105,7 +101,6 @@ def run_bot():
                 
                 summary_heights[sheet_name] = alt
                 
-                # 2. Делаем скриншот ТОЛЬКО нужной таблицы
                 try:
                     table_element = driver.find_element(By.ID, "tabledata")
                 except:
@@ -115,31 +110,33 @@ def run_bot():
                 screenshot_name = f"{sheet_name}_{timestamp}.png"
                 table_element.screenshot(screenshot_name)
                 
-                screenshot_link = upload_image_to_host(screenshot_name)
+                screenshot_link = upload_to_imgur(screenshot_name)
                 
                 if os.path.exists(screenshot_name):
                     os.remove(screenshot_name)
 
-                # 3. Записываем в Google Таблицу (идеальное попадание в колонки)
+                # Строгий массив данных (ровно под ваши 14 колонок)
                 sheet = workbook.worksheet(sheet_name)
                 row_to_append = [
-                    "",             # A: (пустая)
-                    current_time,   # B: Время снятия данных
-                    current_date,   # C: Дата 
-                    lat,            # D: Latitude
-                    lon,            # E: Longitude
-                    alt,            # F: Altitude, км
-                    speed,          # G: Speed, км/с
-                    az,             # H: Azimuth
-                    el,             # I: Elevation
-                    ra,             # J: Right ascension
-                    dec,            # K: Declination
-                    lst,            # L: Local Sidereal Time
-                    period,         # M: SATELLITE PERIOD
-                    screenshot_link # N: Ссылка на картинку
+                    "",             # Колонке A (пустая)
+                    current_time,   # Колонка B
+                    current_date,   # Колонка C
+                    lat,            # Колонка D
+                    lon,            # Колонка E
+                    alt,            # Колонка F
+                    speed,          # Колонка G
+                    az,             # Колонка H
+                    el,             # Колонка I
+                    ra,             # Колонка J
+                    dec,            # Колонка K
+                    lst,            # Колонка L
+                    period,         # Колонка M
+                    screenshot_link # Колонка N (Скриншот)
                 ]
-                sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
-                print(f"Успешно сохранено! Высота={alt}, Скорость={speed}, Ссылка: {screenshot_link[:30]}...")
+                
+                # table_range='A1' заставляет Google Sheets жестко считать с колонки A
+                sheet.append_row(row_to_append, value_input_option='USER_ENTERED', table_range='A1')
+                print(f"Успешно сохранено! Высота={alt}, Скриншот: {screenshot_link}")
                 
             except Exception as sat_error:
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
@@ -153,7 +150,7 @@ def run_bot():
                 name = f"РАССВЕТ 3-{i+1}"
                 summary_row.append(summary_heights.get(name, ""))
             
-            summary_sheet.append_row(summary_row, value_input_option='USER_ENTERED')
+            summary_sheet.append_row(summary_row, value_input_option='USER_ENTERED', table_range='A1')
             print("Сводный лист успешно обновлен.")
         except Exception as summary_error:
             print(f"Не удалось обновить сводный лист: {summary_error}")
