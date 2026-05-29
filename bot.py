@@ -2,6 +2,7 @@ import os
 import time
 import datetime
 import re
+import subprocess
 from pyvirtualdisplay import Display
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -31,6 +32,16 @@ def clean_value(text, marker):
             return val.replace('.', ',')
     return ""
 
+def get_chrome_version():
+    """Динамически узнает версию Chrome на сервере GitHub, чтобы избежать конфликтов"""
+    try:
+        output = subprocess.check_output(['google-chrome', '--version']).decode('utf-8')
+        version = re.search(r'\d+', output).group()
+        return int(version)
+    except Exception as e:
+        print(f"Не удалось определить версию Chrome: {e}")
+        return None
+
 def run_bot():
     print(f"[{datetime.datetime.now()}] Начало обхода группировки Рассвет-3...")
     
@@ -42,13 +53,14 @@ def run_bot():
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    # Добавляем маскировку под обычного пользователя
     options.add_argument("--disable-blink-features=AutomationControlled") 
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
 
-    # Инициализация браузера
-    print("Запуск браузера...")
-    driver = uc.Chrome(options=options)
+    # Узнаем текущую версию браузера и скармливаем её драйверу
+    v_main = get_chrome_version()
+    print(f"Запуск браузера (версия Chrome: {v_main})...")
+    
+    driver = uc.Chrome(options=options, version_main=v_main)
     
     try:
         gc, drive_service = setup_google_apis()
