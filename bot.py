@@ -22,41 +22,32 @@ def setup_google_sheets():
     creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
     return gspread.authorize(creds)
 
-def clean_value(text, marker):
-    """
-    Улучшенный поиск чисел. Ищет маркер (например ALTITUDE), 
-    берет всю строку, вытаскивает из нее первое найденное число 
-    (до пробела или букв) и меняет точку на запятую.
-    """
-    for line in text.split('\n'):
-        if marker.upper() in line.upper():
-            # Убираем сам маркер и двоеточие, оставляем только правую часть
-            val_str = line.upper().replace(marker.upper(), '').replace(':', '').strip()
-            # Ищем первое число (цифры и точка)
-            match = re.search(r'[\d\.]+', val_str)
-            if match:
-                return match.group(0).replace('.', ',')
-    return ""
+def get_text(driver, el_id):
+    """Идеальное извлечение данных по их уникальным ID на сайте"""
+    try:
+        return driver.find_element(By.ID, el_id).text.strip()
+    except:
+        return ""
 
 def upload_image_to_host(filepath):
     try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
         with open(filepath, 'rb') as f:
-            response = requests.post('https://catbox.moe/user/api.php', 
-                                     data={'reqtype': 'fileupload'}, 
-                                     files={'fileToUpload': f})
-        if response.status_code == 200:
-            return response.text
+            r = requests.post('https://catbox.moe/user/api.php', 
+                              data={'reqtype': 'fileupload'}, 
+                              files={'fileToUpload': f},
+                              headers=headers, timeout=15)
+        if r.status_code == 200 and 'http' in r.text:
+            return r.text.strip()
     except Exception as e:
-        print(f"Ошибка загрузки картинки: {e}")
-    return "Не удалось сохранить скриншот"
+        pass
+    return "Скриншот не загружен"
 
 def get_chrome_version():
     try:
         output = subprocess.check_output(['google-chrome', '--version']).decode('utf-8')
-        version = re.search(r'\d+', output).group()
-        return int(version)
-    except Exception as e:
-        print(f"Не удалось определить версию Chrome: {e}")
+        return int(re.search(r'\d+', output).group())
+    except:
         return None
 
 def run_bot():
@@ -80,7 +71,7 @@ def run_bot():
         gc = setup_google_sheets()
         workbook = gc.open_by_key(SHEET_ID)
         
-        current_date = datetime.datetime.now().strftime("%d.%m.%Y")
+        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
         current_time = datetime.datetime.now().strftime("%H:%M:%S")
         
         summary_heights = {}
@@ -93,39 +84,71 @@ def run_bot():
                 driver.get(url)
                 time.sleep(15) 
                 
-                try:
-                    satinfo_element = driver.find_element(By.XPATH, "//*[contains(text(), 'NORAD ID')]/ancestor::table[1]")
-                except:
-                    satinfo_element = driver.find_element(By.XPATH, "//*[contains(text(), 'ALTITUDE')]/ancestor::table[1]")
+                # 1. Извлекаем данные точно по ID из вашего HTML кода!
+                lat = get_text(driver, "satlat").replace('.', ',')
+                lon = get_text(driver, "satlng").replace('.', ',')
+                alt = get_text(driver, "sataltkm").replace('.', ',')
+                speed = get_text(driver, "satspdkm").replace('.', ',')
                 
+                # Собираем Азимут (цифры + направление)
+                az_val = get_text(driver, "sataz").replace('.', ',')
+                az_cmp = get_text(driver, "satazcmp")
+                az = f"{az_val} {az_cmp}".strip()
+                
+                el = get_text(driver, "satel").replace('.', ',')
+                
+                # Заменяем английские буквы на русские (h -> ч, m -> м, s -> с)
+                ra = get_text(driver, "satra").replace('h', 'ч').replace('m', 'м').replace('s', 'с')
+                dec = get_text(driver, "satdec")
+                lst = get_text(driver, "lmst").replace('h', 'ч').replace('m', 'м').replace('s', 'с')
+                period = get_text(driver, "period").replace('m', 'м')
+                
+                summary_heights[sheet_name] = alt
+                
+                # 2. Делаем скриншот ТОЛЬКО нужной таблицы
+                try:
+                    table_element = driver.find_element(By.ID, "tabledata")
+                except:
+                    table_element = driver.find_element(By.ID, "paneldata")
+                    
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 screenshot_name = f"{sheet_name}_{timestamp}.png"
-                satinfo_element.screenshot(screenshot_name)
-                
-                telemetry_text = satinfo_element.text
-                altitude = clean_value(telemetry_text, "ALTITUDE")
-                velocity = clean_value(telemetry_text, "SPEED") 
-                
-                summary_heights[sheet_name] = altitude
+                table_element.screenshot(screenshot_name)
                 
                 screenshot_link = upload_image_to_host(screenshot_name)
                 
                 if os.path.exists(screenshot_name):
                     os.remove(screenshot_name)
 
+                # 3. Записываем в Google Таблицу (идеальное попадание в колонки)
                 sheet = workbook.worksheet(sheet_name)
-                row_to_append = [current_date, current_time, altitude, velocity, screenshot_link]
+                row_to_append = [
+                    "",             # A: (пустая)
+                    current_time,   # B: Время снятия данных
+                    current_date,   # C: Дата 
+                    lat,            # D: Latitude
+                    lon,            # E: Longitude
+                    alt,            # F: Altitude, км
+                    speed,          # G: Speed, км/с
+                    az,             # H: Azimuth
+                    el,             # I: Elevation
+                    ra,             # J: Right ascension
+                    dec,            # K: Declination
+                    lst,            # L: Local Sidereal Time
+                    period,         # M: SATELLITE PERIOD
+                    screenshot_link # N: Ссылка на картинку
+                ]
                 sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
-                
-                print(f"Успешно сохранено для {sheet_name}: Высота={altitude}, Скорость={velocity}")
+                print(f"Успешно сохранено! Высота={alt}, Скорость={speed}, Ссылка: {screenshot_link[:30]}...")
                 
             except Exception as sat_error:
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
                 continue
         
+        # Обновление сводного листа
         try:
             summary_sheet = workbook.worksheet("Данные по высоте орбит всех КА")
-            summary_row = [current_date, current_time]
+            summary_row = ["", "", current_date]
             for i in range(16):
                 name = f"РАССВЕТ 3-{i+1}"
                 summary_row.append(summary_heights.get(name, ""))
