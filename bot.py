@@ -47,7 +47,10 @@ def get_chrome_version():
         return None
 
 def run_bot():
-    print(f"[{datetime.datetime.now()}] Начало обхода группировки Рассвет-3...")
+    # Настраиваем Московское время (UTC+3)
+    msk_tz = datetime.timezone(datetime.timedelta(hours=3))
+    start_time_msk = datetime.datetime.now(msk_tz)
+    print(f"[{start_time_msk.strftime('%Y-%m-%d %H:%M:%S')}] Начало обхода группировки Рассвет-3...")
     
     display = Display(visible=0, size=(1920, 1080))
     display.start()
@@ -69,11 +72,6 @@ def run_bot():
     try:
         gc = setup_google_sheets()
         workbook = gc.open_by_key(SHEET_ID)
-        
-        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
-        current_time = datetime.datetime.now().strftime("%H:%M:%S")
-        
-        summary_heights = {}
 
         for sat_id, sheet_name in SATELLITES.items():
             url = f"https://www.n2yo.com/?s={sat_id}"
@@ -83,7 +81,12 @@ def run_bot():
                 driver.get(url)
                 time.sleep(12) 
                 
-                # Принудительно меняем точки на запятые для правильной работы графиков!
+                # Фиксируем точное Московское время для каждого конкретного спутника!
+                now_msk = datetime.datetime.now(msk_tz)
+                current_date = now_msk.strftime("%Y-%m-%d")
+                current_time = now_msk.strftime("%H:%M:%S")
+                
+                # Извлечение данных и замена точек на запятые
                 lat = get_text(driver, "satlat").replace('.', ',')
                 lon = get_text(driver, "satlng").replace('.', ',')
                 alt = get_text(driver, "sataltkm").replace('.', ',')
@@ -100,14 +103,12 @@ def run_bot():
                 lst = get_text(driver, "lmst").replace('h', 'ч').replace('m', 'м').replace('s', 'с')
                 period = get_text(driver, "period").replace('m', 'м')
                 
-                summary_heights[sheet_name] = alt
-                
                 try:
                     table_element = driver.find_element(By.ID, "tabledata")
                 except:
                     table_element = driver.find_element(By.ID, "paneldata")
                     
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                timestamp = now_msk.strftime("%Y-%m-%d_%H-%M-%S")
                 screenshot_name = f"{sheet_name}_{timestamp}.png"
                 table_element.screenshot(screenshot_name)
                 
@@ -120,15 +121,15 @@ def run_bot():
                 
                 # Массив ровно на 14 колонок (A-N)
                 row_to_append = [
-                    "",             # Колонке A (пустая, как у вас)
-                    current_time,   # Колонка B: Время
-                    current_date,   # Колонка C: Дата
+                    "",             # Колонке A (пустая)
+                    current_time,   # Колонка B: Время (МСК)
+                    current_date,   # Колонка C: Дата (МСК)
                     lat,            # Колонка D: Latitude
                     lon,            # Колонка E: Longitude
-                    alt,            # Колонка F: Altitude (с запятой!)
-                    speed,          # Колонка G: Speed (с запятой!)
+                    alt,            # Колонка F: Altitude
+                    speed,          # Колонка G: Speed
                     az,             # Колонка H: Azimuth
-                    el,             # Колонка I: Elevation (с запятой!)
+                    el,             # Колонка I: Elevation
                     ra,             # Колонка J: Right ascension
                     dec,            # Колонка K: Declination
                     lst,            # Колонка L: Local Sidereal Time
@@ -136,43 +137,23 @@ def run_bot():
                     screenshot_link # Колонка N: Скриншот
                 ]
                 
-                # Ищем последнюю строку ПО КОЛОНКЕ B (Время). Это сохранит старые даты!
                 col_b = sheet.col_values(2)
                 next_row = len(col_b) + 1 
                 
-                # Записываем строго от A до N в новую строку под историей
                 sheet.update(values=[row_to_append], range_name=f"A{next_row}:N{next_row}", value_input_option='USER_ENTERED')
                 print(f"Успешно сохранено! Строка {next_row}, Высота={alt}")
                 
             except Exception as sat_error:
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
                 continue
-        
-        # Обновление сводного листа
-        try:
-            summary_sheet = workbook.worksheet("Данные по высоте орбит всех КА")
-            summary_row = ["", "", current_date]
-            for i in range(16):
-                name = f"РАССВЕТ 3-{i+1}"
-                summary_row.append(summary_heights.get(name, ""))
-                
-            # Ищем пустую строку на сводном листе по колонке С (Дата)
-            col_c = summary_sheet.col_values(3)
-            next_sum_row = len(col_c) + 1
-            
-            # Записываем от A до S
-            summary_sheet.update(values=[summary_row], range_name=f"A{next_sum_row}:S{next_sum_row}", value_input_option='USER_ENTERED')
-            print("Сводный лист успешно обновлен.")
-            
-        except Exception as summary_error:
-            print(f"Не удалось обновить сводный лист: {summary_error}")
 
     except Exception as e:
         print(f"Критическая ошибка бота: {e}")
     finally:
         driver.quit()
         display.stop()
-        print(f"[{datetime.datetime.now()}] Работа завершена.")
+        end_time_msk = datetime.datetime.now(msk_tz)
+        print(f"[{end_time_msk.strftime('%Y-%m-%d %H:%M:%S')}] Работа завершена.")
 
 if __name__ == '__main__':
     run_bot()
