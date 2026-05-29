@@ -18,13 +18,11 @@ jobs:
       with:
         python-version: '3.10'
 
-    # Устанавливаем системные пакеты
     - name: Install System Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y xvfb
 
-    # Устанавливаем библиотеки Python
     - name: Install Python dependencies
       run: |
         pip install pyvirtualdisplay undetected-chromedriver selenium gspread google-api-python-client google-auth
@@ -34,3 +32,11 @@ jobs:
 
     - name: Run Python script
       run: python bot.py
+      
+    # НОВЫЙ ШАГ: Собираем скриншоты прямо на GitHub
+    - name: Upload screenshots to GitHub
+      uses: actions/upload-artifact@v4
+      if: always() # Этот параметр заставит GitHub собрать скрины даже при ошибках в коде
+      with:
+        name: cloudflare-screenshots
+        path: "*.png"
