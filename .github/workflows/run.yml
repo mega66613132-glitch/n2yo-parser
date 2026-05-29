@@ -2,7 +2,6 @@ name: Daily N2YO Parser
 
 on:
   schedule:
-    # Запуск каждый день в 18:55 МСК (15:55 UTC)
     - cron: '55 15 * * *'
   workflow_dispatch: 
 
@@ -19,13 +18,13 @@ jobs:
       with:
         python-version: '3.10'
 
-    # Устанавливаем системный пакет для виртуального монитора
+    # Устанавливаем системные пакеты
     - name: Install System Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y xvfb
 
-    # Устанавливаем новые скрытные библиотеки для Python
+    # Устанавливаем библиотеки Python
     - name: Install Python dependencies
       run: |
         pip install pyvirtualdisplay undetected-chromedriver selenium gspread google-api-python-client google-auth
