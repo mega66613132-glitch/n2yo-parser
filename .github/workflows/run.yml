@@ -3,7 +3,7 @@ name: Daily N2YO Parser
 on:
   schedule:
     # Запуск каждый день в 19:01 по МСК (16:01 по UTC)
-    - cron: '1 16 * * *'
+    - cron: '0 17 * * *'
   workflow_dispatch: 
 
 jobs:
