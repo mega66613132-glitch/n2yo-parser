@@ -33,7 +33,6 @@ def clean_value(text, marker):
     return ""
 
 def get_chrome_version():
-    """Динамически узнает версию Chrome на сервере GitHub, чтобы избежать конфликтов"""
     try:
         output = subprocess.check_output(['google-chrome', '--version']).decode('utf-8')
         version = re.search(r'\d+', output).group()
@@ -45,18 +44,15 @@ def get_chrome_version():
 def run_bot():
     print(f"[{datetime.datetime.now()}] Начало обхода группировки Рассвет-3...")
     
-    # Запуск виртуального монитора
     display = Display(visible=0, size=(1920, 1080))
     display.start()
     
-    # Настройки скрытного браузера
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled") 
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
 
-    # Узнаем текущую версию браузера и скармливаем её драйверу
     v_main = get_chrome_version()
     print(f"Запуск браузера (версия Chrome: {v_main})...")
     
@@ -77,7 +73,7 @@ def run_bot():
             
             try:
                 driver.get(url)
-                time.sleep(12) # Ждем прохождения проверки Cloudflare
+                time.sleep(15) # Даем больше времени на прогрузку
                 
                 satinfo_element = driver.find_element(By.ID, "satinfo")
                 
@@ -107,6 +103,20 @@ def run_bot():
                 
             except Exception as sat_error:
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
+                # ---- РЕЖИМ РАЗВЕДКИ: СОХРАНЯЕМ СКРИНШОТ ОШИБКИ ----
+                print("Делаю полноэкранный скриншот для диагностики...")
+                error_screenshot = f"ERROR_{sheet_name}.png"
+                driver.save_screenshot(error_screenshot)
+                try:
+                    file_metadata = {'name': error_screenshot, 'parents': [DRIVE_FOLDER_ID]}
+                    media = MediaFileUpload(error_screenshot, mimetype='image/png')
+                    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                    print("Скриншот препятствия отправлен на ваш Google Диск!")
+                    if os.path.exists(error_screenshot):
+                        os.remove(error_screenshot)
+                except Exception as e:
+                    print(f"Не удалось загрузить скриншот ошибки на Диск: {e}")
+                # ---------------------------------------------------
                 continue
         
         try:
