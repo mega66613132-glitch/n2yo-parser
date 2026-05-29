@@ -16,7 +16,6 @@ SHEET_ID = '1e9SrUlObI--v-clyzLseR-jyAx0mYtPXMcsu9N652Xw'
 DRIVE_FOLDER_ID = '18zb6bD6xDIIm63MfsyWCGswhk77acsSq' 
 # =============================================
 
-# Список спутников: ID от 68360 до 68375
 SATELLITES = {68360 + i: f"РАССВЕТ 3-{i+1}" for i in range(16)}
 
 def setup_google_apis():
@@ -35,16 +34,20 @@ def clean_value(text, marker):
 def run_bot():
     print(f"[{datetime.datetime.now()}] Начало обхода группировки Рассвет-3...")
     
-    # 1. Запуск виртуального монитора (обманываем проверку на серверное железо)
+    # Запуск виртуального монитора
     display = Display(visible=0, size=(1920, 1080))
     display.start()
     
-    # 2. Настройки "Скрытного" браузера
+    # Настройки скрытного браузера
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    # ВАЖНО: Мы полностью убрали флаг --headless!
+    # Добавляем маскировку под обычного пользователя
+    options.add_argument("--disable-blink-features=AutomationControlled") 
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
 
+    # Инициализация браузера
+    print("Запуск браузера...")
     driver = uc.Chrome(options=options)
     
     try:
@@ -62,8 +65,7 @@ def run_bot():
             
             try:
                 driver.get(url)
-                # Даем больше времени (10 секунд), чтобы пройти невидимую проверку Cloudflare
-                time.sleep(10) 
+                time.sleep(12) # Ждем прохождения проверки Cloudflare
                 
                 satinfo_element = driver.find_element(By.ID, "satinfo")
                 
@@ -95,7 +97,6 @@ def run_bot():
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
                 continue
         
-        # Обновление сводного листа
         try:
             summary_sheet = workbook.worksheet("Данные по высоте орбит всех КА")
             summary_row = [current_date, current_time]
@@ -112,7 +113,7 @@ def run_bot():
         print(f"Критическая ошибка бота: {e}")
     finally:
         driver.quit()
-        display.stop() # Закрываем виртуальный монитор
+        display.stop()
         print(f"[{datetime.datetime.now()}] Работа завершена.")
 
 if __name__ == '__main__':
