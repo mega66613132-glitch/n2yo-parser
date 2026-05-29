@@ -3,26 +3,24 @@ import time
 import datetime
 import re
 import subprocess
+import requests
 from pyvirtualdisplay import Display
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
 # ================= НАСТРОЙКИ =================
 CREDENTIALS_FILE = 'credentials.json' 
 SHEET_ID = '1e9SrUlObI--v-clyzLseR-jyAx0mYtPXMcsu9N652Xw' 
-DRIVE_FOLDER_ID = '18zb6bD6xDIIm63MfsyWCGswhk77acsSq' 
 # =============================================
 
 SATELLITES = {68360 + i: f"РАССВЕТ 3-{i+1}" for i in range(16)}
 
-def setup_google_apis():
-    scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+def setup_google_sheets():
+    scopes = ['https://www.googleapis.com/auth/spreadsheets']
     creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
-    return gspread.authorize(creds), build('drive', 'v3', credentials=creds)
+    return gspread.authorize(creds)
 
 def clean_value(text, marker):
     for line in text.split('\n'):
@@ -31,6 +29,19 @@ def clean_value(text, marker):
             val = re.sub(r'[^\d\.\-]', '', val)
             return val.replace('.', ',')
     return ""
+
+def upload_image_to_host(filepath):
+    """Загружает скриншот на бесплатный сервер и возвращает прямую ссылку"""
+    try:
+        with open(filepath, 'rb') as f:
+            response = requests.post('https://catbox.moe/user/api.php', 
+                                     data={'reqtype': 'fileupload'}, 
+                                     files={'fileToUpload': f})
+        if response.status_code == 200:
+            return response.text # Готовая ссылка на картинку
+    except Exception as e:
+        print(f"Ошибка загрузки картинки: {e}")
+    return "Не удалось сохранить скриншот"
 
 def get_chrome_version():
     try:
@@ -59,7 +70,7 @@ def run_bot():
     driver = uc.Chrome(options=options, version_main=v_main)
     
     try:
-        gc, drive_service = setup_google_apis()
+        gc = setup_google_sheets()
         workbook = gc.open_by_key(SHEET_ID)
         
         current_date = datetime.datetime.now().strftime("%d.%m.%Y")
@@ -73,9 +84,13 @@ def run_bot():
             
             try:
                 driver.get(url)
-                time.sleep(15) # Даем больше времени на прогрузку
+                time.sleep(15) 
                 
-                satinfo_element = driver.find_element(By.ID, "satinfo")
+                # УМНЫЙ ПОИСК: Ищем таблицу по содержанию текста, а не по ID
+                try:
+                    satinfo_element = driver.find_element(By.XPATH, "//*[contains(text(), 'NORAD ID')]/ancestor::table[1]")
+                except:
+                    satinfo_element = driver.find_element(By.XPATH, "//*[contains(text(), 'ALTITUDE')]/ancestor::table[1]")
                 
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 screenshot_name = f"{sheet_name}_{timestamp}.png"
@@ -83,18 +98,18 @@ def run_bot():
                 
                 telemetry_text = satinfo_element.text
                 altitude = clean_value(telemetry_text, "ALTITUDE")
-                velocity = clean_value(telemetry_text, "VELOCITY")
+                velocity = clean_value(telemetry_text, "SPEED") 
                 
                 summary_heights[sheet_name] = altitude
                 
-                file_metadata = {'name': screenshot_name, 'parents': [DRIVE_FOLDER_ID]}
-                media = MediaFileUpload(screenshot_name, mimetype='image/png')
-                drive_file = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-                screenshot_link = drive_file.get('webViewLink')
+                # Загружаем скриншот и получаем ссылку
+                screenshot_link = upload_image_to_host(screenshot_name)
                 
+                # Удаляем картинку с сервера GitHub, чтобы не мусорить
                 if os.path.exists(screenshot_name):
                     os.remove(screenshot_name)
 
+                # Запись в Гугл Таблицу
                 sheet = workbook.worksheet(sheet_name)
                 row_to_append = [current_date, current_time, altitude, velocity, screenshot_link]
                 sheet.append_row(row_to_append, value_input_option='USER_ENTERED')
@@ -103,22 +118,9 @@ def run_bot():
                 
             except Exception as sat_error:
                 print(f"Ошибка при обработке спутника {sheet_name}: {sat_error}")
-                # ---- РЕЖИМ РАЗВЕДКИ: СОХРАНЯЕМ СКРИНШОТ ОШИБКИ ----
-                print("Делаю полноэкранный скриншот для диагностики...")
-                error_screenshot = f"ERROR_{sheet_name}.png"
-                driver.save_screenshot(error_screenshot)
-                try:
-                    file_metadata = {'name': error_screenshot, 'parents': [DRIVE_FOLDER_ID]}
-                    media = MediaFileUpload(error_screenshot, mimetype='image/png')
-                    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                    print("Скриншот препятствия отправлен на ваш Google Диск!")
-                    if os.path.exists(error_screenshot):
-                        os.remove(error_screenshot)
-                except Exception as e:
-                    print(f"Не удалось загрузить скриншот ошибки на Диск: {e}")
-                # ---------------------------------------------------
                 continue
         
+        # Обновление сводного листа
         try:
             summary_sheet = workbook.worksheet("Данные по высоте орбит всех КА")
             summary_row = [current_date, current_time]
