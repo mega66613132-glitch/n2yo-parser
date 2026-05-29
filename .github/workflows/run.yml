@@ -2,8 +2,8 @@ name: Daily N2YO Parser
 
 on:
   schedule:
-    # Запуск каждый день в 09:00 по UTC (12:00 по московскому времени)
-    - cron: '0 16 * * *'
+    # Запуск каждый день в 18:55 МСК (15:55 UTC)
+    - cron: '55 15 * * *'
   workflow_dispatch: 
 
 jobs:
@@ -19,9 +19,16 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install dependencies
+    # Устанавливаем системный пакет для виртуального монитора
+    - name: Install System Dependencies
       run: |
-        pip install selenium gspread google-api-python-client google-auth
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+
+    # Устанавливаем новые скрытные библиотеки для Python
+    - name: Install Python dependencies
+      run: |
+        pip install pyvirtualdisplay undetected-chromedriver selenium gspread google-api-python-client google-auth
 
     - name: Create credentials.json
       run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
