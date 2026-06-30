@@ -15,7 +15,8 @@ CREDENTIALS_FILE = 'credentials.json'
 SHEET_ID = '1e9SrUlObI--v-clyzLseR-jyAx0mYtPXMcsu9N652Xw' 
 # =============================================
 
-SATELLITES = {68360 + i: f"РАССВЕТ 3-{i+1}" for i in range(16)}
+# Генерируем список, полностью исключая 4-й спутник (индекс 3, ID 68363)
+SATELLITES = {68360 + i: f"РАССВЕТ 3-{i+1}" for i in range(16) if i != 3}
 
 def setup_google_sheets():
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
@@ -47,7 +48,6 @@ def get_chrome_version():
         return None
 
 def run_bot():
-    # Настраиваем Московское время (UTC+3)
     msk_tz = datetime.timezone(datetime.timedelta(hours=3))
     start_time_msk = datetime.datetime.now(msk_tz)
     print(f"[{start_time_msk.strftime('%Y-%m-%d %H:%M:%S')}] Начало обхода группировки Рассвет-3...")
@@ -81,12 +81,10 @@ def run_bot():
                 driver.get(url)
                 time.sleep(12) 
                 
-                # Фиксируем точное Московское время для каждого конкретного спутника!
                 now_msk = datetime.datetime.now(msk_tz)
                 current_date = now_msk.strftime("%Y-%m-%d")
                 current_time = now_msk.strftime("%H:%M:%S")
                 
-                # Извлечение данных и замена точек на запятые
                 lat = get_text(driver, "satlat").replace('.', ',')
                 lon = get_text(driver, "satlng").replace('.', ',')
                 alt = get_text(driver, "sataltkm").replace('.', ',')
@@ -119,22 +117,21 @@ def run_bot():
 
                 sheet = workbook.worksheet(sheet_name)
                 
-                # Массив ровно на 14 колонок (A-N)
                 row_to_append = [
-                    "",             # Колонке A (пустая)
-                    current_time,   # Колонка B: Время (МСК)
-                    current_date,   # Колонка C: Дата (МСК)
-                    lat,            # Колонка D: Latitude
-                    lon,            # Колонка E: Longitude
-                    alt,            # Колонка F: Altitude
-                    speed,          # Колонка G: Speed
-                    az,             # Колонка H: Azimuth
-                    el,             # Колонка I: Elevation
-                    ra,             # Колонка J: Right ascension
-                    dec,            # Колонка K: Declination
-                    lst,            # Колонка L: Local Sidereal Time
-                    period,         # Колонка M: SATELLITE PERIOD
-                    screenshot_link # Колонка N: Скриншот
+                    "",             
+                    current_time,   
+                    current_date,   
+                    lat,            
+                    lon,            
+                    alt,            
+                    speed,          
+                    az,             
+                    el,             
+                    ra,             
+                    dec,            
+                    lst,            
+                    period,         
+                    screenshot_link 
                 ]
                 
                 col_b = sheet.col_values(2)
